@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lector de Formatos D100 / MIDIS</title>
+  <!-- Librería PDF.js de Mozilla -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1050px;
+      margin: 30px auto;
+      padding: 20px;
+      background-color: #f4f7f6;
+      color: #333;
+    }
+    h1 {
+      color: #0056b3;
+      text-align: center;
+      margin-bottom: 5px;
+    }
+    p.subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 25px;
+    }
+    .upload-box {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    input[type="file"] {
+      padding: 10px;
+      border: 1px dashed #0056b3;
+      border-radius: 4px;
+      background: #f8fafd;
+      cursor: pointer;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      margin-bottom: 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+      border-left: 6px solid #0056b3;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+    }
+    .badge {
+      background: #e1f0ff;
+      color: #0056b3;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background-color: #0056b3;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .btn-export {
+      background-color: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .btn-export:hover {
+      background-color: #218838;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Extractor de Registros - D100</h1>
+  <p class="subtitle">Procesamiento local de PDFs de Solicitudes CSE (S100 / FSU)</p>
+
+  <div class="upload-box">
+    <p>Selecciona tus archivos PDF (puedes elegir varios a la vez):</p>
+    <input type="file" id="fileInput" accept="application/pdf" multiple />
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+      const files = e.target.files;
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '';
+
+      for (const file of files) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+          fullText += pageText + ' ';
+        }
+
+        const extractedData = parsePDF(fullText, file.name);
+        renderTable(extractedData);
+      }
+    });
+
+    function parsePDF(text, fileName) {
+      // 1. Número de Formato D100
+      const d100Match = text.match(/Número de Formato D100\s*:\s*(\d+)/i) || 
+                        text.match(/FORMATO D100 Nro\.\s*:\s*(\d+)/i);
+      const d100Number = d100Match ? d100Match[1] : 'No identificado';
+
+      // 2. Tipo de Registro Principal (S100 o FSU)
+      let tipoRegistro = 'S100';
+      if (text.includes('FSU')) tipoRegistro = 'FSU';
+
+      // 3. Extracción de Registros
+      // Busca patrones como: S100 9965811 18251257 ... 70429021-CARAZAS RAMIREZ...
+      // O: FSU 9986067 26227658 ... 47903133-CUEVA CHAVEZ...
+      const regex = new RegExp(`(S100|FSU)\\s+\\d+\\s+(\\d{7,8})\\s+(?:\\d{2}-\\d{2}-\\d{4})?\\s*(\\d{8,9})\\s*-\\s*([A-ZÑÁÉÍÓÚ\\s]+)`, 'g');
+      
+      const records = [];
+      let match;
+
+      while ((match = regex.exec(text)) !== null) {
+        records.push({
+          d100: d100Number,
+          tipo: match[1],
+          numFormato: match[2],
+          dni: match[3],
+          nombres: match[4].trim()
+        });
+      }
+
+      return { fileName, d100Number, tipoRegistro, records };
+    }
+
+    function renderTable(data) {
+      const resultsDiv = document.getElementById('results');
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      let html = `
+        <div class="card-header">
+          <div>
+            <h2>📄 ${data.fileName}</h2>
+            <span>Formato D100 N°: <strong class="badge">${data.d100Number}</strong></span> | 
+            <span>Tipo: <strong class="badge">${data.tipoRegistro}</strong></span> | 
+            <span>Total encontrados: <strong>${data.records.length}</strong></span>
+          </div>
+          ${data.records.length > 0 ? `<button class="btn-export" onclick="exportCSV('${data.fileName}', '${data.d100Number}')">Exportar a Excel</button>` : ''}
+        </div>
+      `;
+
+      if (data.records.length > 0) {
+        html += `
+          <table>
+            <thead>
+              <tr>
+                <th>Formato D100 N°</th>
+                <th>Tipo</th>
+                <th>Número de Formato</th>
+                <th>DNI</th>
+                <th>Apellidos y Nombres</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.records.map(r => `
+                <tr>
+                  <td>${r.d100}</td>
+                  <td>${r.tipo}</td>
+                  <td>${r.numFormato}</td>
+                  <td>${r.dni}</td>
+                  <td>${r.nombres}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else {
+        html += `<p><em>No se encontraron registros de la lista en este documento.</em></p>`;
+      }
+
+      card.innerHTML = html;
+      card.dataset.records = JSON.stringify(data.records);
+      resultsDiv.appendChild(card);
+    }
+
+    function exportCSV(fileName, d100Number) {
+      const cards = Array.from(document.querySelectorAll('.card'));
+      const targetCard = cards.find(c => c.querySelector('h2').innerText.includes(fileName));
+      if (!targetCard) return;
+
+      const records = JSON.parse(targetCard.dataset.records);
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // UTF-8 BOM para tildes en Excel
+      csvContent += "Formato D100 N°;Tipo de Registro;Numero de Formato;DNI;Apellidos y Nombres\n";
+
+      records.forEach(r => {
+        csvContent += `"${r.d100}";"${r.tipo}";"${r.numFormato}";"${r.dni}";"${r.nombres}"\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `D100_${d100Number}_Export.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>
