@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lector y Acumulador de Formatos D100 / MIDIS</title>
+  <title>Acumulador de Registros D100</title>
   <!-- Librería PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
@@ -31,7 +31,7 @@
       border-radius: 8px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.08);
       text-align: center;
-      margin-bottom: 25px;
+      margin-bottom: 20px;
     }
     input[type="file"] {
       padding: 10px;
@@ -46,9 +46,9 @@
       align-items: center;
       background: white;
       padding: 15px 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
+      border-radius: 8px 8px 0 0;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border-bottom: 2px solid #0056b3;
     }
     .badge {
       background: #e1f0ff;
@@ -82,14 +82,12 @@
     .table-container {
       background: white;
       padding: 20px;
-      border-radius: 8px;
+      border-radius: 0 0 8px 8px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.08);
-      border-left: 6px solid #0056b3;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 10px;
       font-size: 13px;
     }
     th, td {
@@ -108,11 +106,11 @@
 </head>
 <body>
 
-  <h1>Acumulador de Registros - D100</h1>
-  <p class="subtitle">Sube múltiples archivos PDF consecutivamente y consolida la información</p>
+  <h1>Extractor de Registros - D100</h1>
+  <p class="subtitle">Sube tus archivos PDF consecutivamente para acumular la información</p>
 
   <div class="upload-box">
-    <p>Selecciona uno o varios archivos PDF para agregar a la lista:</p>
+    <p>Selecciona un archivo PDF para agregar registros a la tabla:</p>
     <input type="file" id="fileInput" accept="application/pdf" multiple />
   </div>
 
@@ -122,7 +120,7 @@
     </div>
     <div>
       <button class="btn btn-export" onclick="exportCSV()">Exportar Todo a Excel</button>
-      <button class="btn btn-clear" onclick="clearAllData()">Limpiar Datos</button>
+      <button class="btn btn-clear" onclick="clearAllData()">Limpiar Tabla</button>
     </div>
   </div>
 
@@ -152,7 +150,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    // Arreglo global para almacenar todos los registros acumulados
+    // Lista global donde se acumulan los registros
     let allAccumulatedRecords = [];
 
     document.getElementById('fileInput').addEventListener('change', async function(e) {
@@ -172,12 +170,12 @@
         }
 
         const newRecords = parsePDF(fullText);
+        // Acumular los nuevos registros al final del arreglo existente
         allAccumulatedRecords = allAccumulatedRecords.concat(newRecords);
       }
 
       renderTable();
-      // Limpiar input para permitir volver a cargar el mismo archivo si es necesario
-      this.value = '';
+      this.value = ''; // Permite cargar más archivos sin recargar la página
     });
 
     function parsePDF(text) {
@@ -186,14 +184,14 @@
                         text.match(/FORMATO D100 Nro\.\s*:\s*(\d+)/i);
       const d100Number = d100Match ? d100Match[1] : 'No identificado';
 
-      // 2. Aislar la sección del anexo
+      // 2. Aislar anexo de registros
       let cleanedText = text;
       const inicioTabla = text.search(/ANEXO DEL FORMATO D100|RELACIÓN DE FORMATOS/i);
       if (inicioTabla !== -1) {
         cleanedText = text.substring(inicioTabla);
       }
 
-      // 3. Delimitar bloques por FSU o S100
+      // 3. Separar bloques por FSU o S100
       const textWithMarkers = cleanedText.replace(/\b(FSU|S100)\b(?=\s+\d{7,8})/g, '|||$1');
       const blocks = textWithMarkers.split('|||').filter(b => b.trim().startsWith('FSU') || b.trim().startsWith('S100'));
 
@@ -280,7 +278,7 @@
     }
 
     function clearAllData() {
-      if (confirm("¿Estás seguro de que deseas borrar todos los registros acumulados?")) {
+      if (confirm("¿Estás seguro de que deseas vaciar toda la tabla?")) {
         allAccumulatedRecords = [];
         renderTable();
       }
