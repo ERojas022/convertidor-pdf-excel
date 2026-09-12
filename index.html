@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lector de Formatos D100 / MIDIS</title>
+  <title>Lector y Acumulador de Formatos D100 / MIDIS</title>
   <!-- Librería PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
@@ -40,28 +40,51 @@
       background: #f8fafd;
       cursor: pointer;
     }
-    .card {
-      background: white;
-      padding: 20px;
-      margin-bottom: 25px;
-      border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.08);
-      border-left: 6px solid #0056b3;
-    }
-    .card-header {
+    .controls {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2px solid #eee;
-      padding-bottom: 10px;
-      margin-bottom: 15px;
+      background: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .badge {
       background: #e1f0ff;
       color: #0056b3;
-      padding: 5px 10px;
+      padding: 5px 12px;
       border-radius: 4px;
       font-weight: bold;
+      font-size: 14px;
+    }
+    .btn {
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-left: 8px;
+    }
+    .btn-export {
+      background-color: #28a745;
+    }
+    .btn-export:hover {
+      background-color: #218838;
+    }
+    .btn-clear {
+      background-color: #dc3545;
+    }
+    .btn-clear:hover {
+      background-color: #c82333;
+    }
+    .table-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+      border-left: 6px solid #0056b3;
     }
     table {
       width: 100%;
@@ -81,39 +104,60 @@
     tr:nth-child(even) {
       background-color: #f9f9f9;
     }
-    .btn-export {
-      background-color: #28a745;
-      color: white;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    .btn-export:hover {
-      background-color: #218838;
-    }
   </style>
 </head>
 <body>
 
-  <h1>Extractor de Registros - D100</h1>
-  <p class="subtitle">Procesamiento local de PDFs de Solicitudes CSE (S100 / FSU)</p>
+  <h1>Acumulador de Registros - D100</h1>
+  <p class="subtitle">Sube múltiples archivos PDF consecutivamente y consolida la información</p>
 
   <div class="upload-box">
-    <p>Selecciona tus archivos PDF (puedes elegir varios a la vez):</p>
+    <p>Selecciona uno o varios archivos PDF para agregar a la lista:</p>
     <input type="file" id="fileInput" accept="application/pdf" multiple />
   </div>
 
-  <div id="results"></div>
+  <div class="controls">
+    <div>
+      <span>Total acumulado: <strong id="totalCount" class="badge">0 registros</strong></span>
+    </div>
+    <div>
+      <button class="btn btn-export" onclick="exportCSV()">Exportar Todo a Excel</button>
+      <button class="btn btn-clear" onclick="clearAllData()">Limpiar Datos</button>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Formato D100 N°</th>
+          <th>Tipo</th>
+          <th>Número de Formato</th>
+          <th>Fecha</th>
+          <th>DNI</th>
+          <th>Apellidos y Nombres</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr id="emptyRow">
+          <td colspan="7" style="text-align: center; color: #888; padding: 20px;">
+            <em>No hay registros acumulados. Suba un archivo PDF para comenzar.</em>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+    // Arreglo global para almacenar todos los registros acumulados
+    let allAccumulatedRecords = [];
+
     document.getElementById('fileInput').addEventListener('change', async function(e) {
       const files = e.target.files;
-      const resultsDiv = document.getElementById('results');
-      resultsDiv.innerHTML = '';
+      if (!files.length) return;
 
       for (const file of files) {
         const arrayBuffer = await file.arrayBuffer();
@@ -123,17 +167,20 @@
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          
           let pageText = textContent.items.map(item => item.str).join(' ');
           fullText += pageText + ' \n ';
         }
 
-        const extractedData = parsePDF(fullText, file.name);
-        renderTable(extractedData);
+        const newRecords = parsePDF(fullText);
+        allAccumulatedRecords = allAccumulatedRecords.concat(newRecords);
       }
+
+      renderTable();
+      // Limpiar input para permitir volver a cargar el mismo archivo si es necesario
+      this.value = '';
     });
 
-    function parsePDF(text, fileName) {
+    function parsePDF(text) {
       // 1. Extraer Formato D100 N°
       const d100Match = text.match(/Número de Formato D100\s*:\s*(\d+)/i) || 
                         text.match(/FORMATO D100 Nro\.\s*:\s*(\d+)/i);
@@ -146,17 +193,14 @@
         cleanedText = text.substring(inicioTabla);
       }
 
-      // 3. Separar por marcas de inicio (FSU o S100)
+      // 3. Delimitar bloques por FSU o S100
       const textWithMarkers = cleanedText.replace(/\b(FSU|S100)\b(?=\s+\d{7,8})/g, '|||$1');
       const blocks = textWithMarkers.split('|||').filter(b => b.trim().startsWith('FSU') || b.trim().startsWith('S100'));
 
       const records = [];
 
       blocks.forEach(block => {
-        // Limpiar espacios y unificar hasta 2 líneas de texto por bloque
         const singleLineBlock = block.replace(/\s+/g, ' ').trim();
-
-        // Extraer campos principales omitiendo el código de operación
         const regexBlock = /^(FSU|S100)\s+\d+\s+(\d+)\s+(\d{2}-\d{2}-\d{4})\s+([0-9A-Z]+)\s*-\s*(.+)$/i;
         const match = singleLineBlock.match(regexBlock);
 
@@ -167,7 +211,6 @@
           let dni = match[4];
           let nombresRaw = match[5];
 
-          // Cortar basura de pie de página (Sub Total, Pagina, etc.)
           let nombres = nombresRaw.split(/(Sub Total|Total|Pagina|Ubigeo|RELACIÓN DE FORMATOS)/i)[0].trim();
 
           records.push({
@@ -181,83 +224,66 @@
         }
       });
 
-      return { fileName, d100Number, records };
+      return records;
     }
 
-    function renderTable(data) {
-      const resultsDiv = document.getElementById('results');
-      const card = document.createElement('div');
-      card.className = 'card';
+    function renderTable() {
+      const tableBody = document.getElementById('tableBody');
+      const totalCount = document.getElementById('totalCount');
 
-      let html = `
-        <div class="card-header">
-          <div>
-            <h2>📄 ${data.fileName}</h2>
-            <span>Formato D100 N°: <strong class="badge">${data.d100Number}</strong></span> | 
-            <span>Total registros extraídos: <strong>${data.records.length}</strong></span>
-          </div>
-          ${data.records.length > 0 ? `<button class="btn-export" onclick="exportCSV('${data.fileName}')">Exportar a Excel</button>` : ''}
-        </div>
-      `;
-
-      if (data.records.length > 0) {
-        html += `
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Formato D100 N°</th>
-                <th>Tipo</th>
-                <th>Número de Formato</th>
-                <th>Fecha</th>
-                <th>DNI</th>
-                <th>Apellidos y Nombres</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.records.map((r, index) => `
-                <tr>
-                  <td>${index + 1}</td>
-                  <td>${r.d100}</td>
-                  <td>${r.tipo}</td>
-                  <td>${r.numFormato}</td>
-                  <td>${r.fecha}</td>
-                  <td>${r.dni}</td>
-                  <td>${r.nombres}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        `;
-      } else {
-        html += `<p><em>No se encontraron registros en este documento.</em></p>`;
+      if (allAccumulatedRecords.length === 0) {
+        tableBody.innerHTML = `
+          <tr id="emptyRow">
+            <td colspan="7" style="text-align: center; color: #888; padding: 20px;">
+              <em>No hay registros acumulados. Suba un archivo PDF para comenzar.</em>
+            </td>
+          </tr>`;
+        totalCount.innerText = '0 registros';
+        return;
       }
 
-      card.innerHTML = html;
-      card.dataset.records = JSON.stringify(data.records);
-      resultsDiv.appendChild(card);
+      tableBody.innerHTML = allAccumulatedRecords.map((r, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${r.d100}</td>
+          <td>${r.tipo}</td>
+          <td>${r.numFormato}</td>
+          <td>${r.fecha}</td>
+          <td>${r.dni}</td>
+          <td>${r.nombres}</td>
+        </tr>
+      `).join('');
+
+      totalCount.innerText = `${allAccumulatedRecords.length} registros`;
     }
 
-    function exportCSV(fileName) {
-      const cards = Array.from(document.querySelectorAll('.card'));
-      const targetCard = cards.find(c => c.querySelector('h2').innerText.includes(fileName));
-      if (!targetCard) return;
+    function exportCSV() {
+      if (allAccumulatedRecords.length === 0) {
+        alert("No hay registros para exportar.");
+        return;
+      }
 
-      const records = JSON.parse(targetCard.dataset.records);
       let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
       csvContent += "Item;Formato D100 N°;Tipo;Numero de Formato;Fecha;DNI;Apellidos y Nombres\n";
 
-      records.forEach((r, idx) => {
+      allAccumulatedRecords.forEach((r, idx) => {
         csvContent += `"${idx + 1}";"${r.d100}";"${r.tipo}";"${r.numFormato}";"${r.fecha}";"${r.dni}";"${r.nombres}"\n`;
       });
 
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `${fileName.replace('.pdf', '')}_Registros.csv`);
+      link.setAttribute("download", `Consolidado_Registros_D100.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+
+    function clearAllData() {
+      if (confirm("¿Estás seguro de que deseas borrar todos los registros acumulados?")) {
+        allAccumulatedRecords = [];
+        renderTable();
+      }
     }
   </script>
 </body>
