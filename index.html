@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lector de Formatos D100 / MIDIS</title>
-  <!-- Librería PDF.js de Mozilla -->
+  <!-- Librería PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      max-width: 1050px;
+      max-width: 1100px;
       margin: 30px auto;
       padding: 20px;
       background-color: #f4f7f6;
@@ -67,11 +67,11 @@
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
-      font-size: 14px;
+      font-size: 13px;
     }
     th, td {
       border: 1px solid #ddd;
-      padding: 8px 12px;
+      padding: 8px 10px;
       text-align: left;
     }
     th {
@@ -123,8 +123,18 @@
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          const pageText = textContent.items.map(item => item.str).join(' ');
-          fullText += pageText + ' ';
+          
+          // Reconstruir el texto reteniendo saltos de línea para delimitar filas correctamente
+          let lastY = null;
+          let pageText = '';
+          for (const item of textContent.items) {
+            if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+              pageText += '\n';
+            }
+            pageText += item.str + ' ';
+            lastY = item.transform[5];
+          }
+          fullText += pageText + '\n';
         }
 
         const extractedData = parsePDF(fullText, file.name);
@@ -138,27 +148,35 @@
                         text.match(/FORMATO D100 Nro\.\s*:\s*(\d+)/i);
       const d100Number = d100Match ? d100Match[1] : 'No identificado';
 
-      // 2. Tipo de Registro Principal (S100 o FSU)
-      let tipoRegistro = 'S100';
-      if (text.includes('FSU')) tipoRegistro = 'FSU';
+      // 2. Tipo de Registro Principal
+      let tipoRegistro = text.includes('FSU') ? 'FSU' : 'S100';
 
-      // 3. Extracción de Registros
-      // Busca patrones como: S100 9965811 18251257 ... 70429021-CARAZAS RAMIREZ...
-      // O: FSU 9986067 26227658 ... 47903133-CUEVA CHAVEZ...
-      const regex = new RegExp(`(S100|FSU)\\s+\\d+\\s+(\\d{7,8})\\s+(?:\\d{2}-\\d{2}-\\d{4})?\\s*(\\d{8,9})\\s*-\\s*([A-ZÑÁÉÍÓÚ\\s]+)`, 'g');
-      
+      // 3. Expresión regular ajustada para capturar exactamente cada fila
+      const regex = /(S100|FSU)\s+(\d+)\s+(\d{7,8})\s+(?:\d{2}-\d{2}-\d{4})?\s*(\d{8,9})\s*-\s*([A-ZÑÁÉÍÓÚ\s]+?)(?=\s+(?:S100|FSU|\d{2}-\d{2}-\d{4}|Sub Total|Total|Pagina|\n|$))/gi;
+
       const records = [];
       let match;
 
       while ((match = regex.exec(text)) !== null) {
+        let nombreLimpio = match[5].trim().replace(/\s+(S100|FSU)$/i, '');
+        
         records.push({
           d100: d100Number,
-          tipo: match[1],
-          numFormato: match[2],
-          dni: match[3],
-          nombres: match[4].trim()
+          tipo: match[1].toUpperCase(),
+          numFormato: match[2] === match[1] ? match[3] : match[2],
+          numOperacion: match[2],
+          numFsuS100: match[3],
+          dni: match[4],
+          nombres: nombreLimpio
         });
       }
+
+      // Si se extrajo de forma invertida el número de formato por la estructura de columnas
+      records.forEach(r => {
+        if (r.numFormato === r.numOperacion) {
+          r.numFormato = r.numFsuS100;
+        }
+      });
 
       return { fileName, d100Number, tipoRegistro, records };
     }
@@ -176,7 +194,7 @@
             <span>Tipo: <strong class="badge">${data.tipoRegistro}</strong></span> | 
             <span>Total encontrados: <strong>${data.records.length}</strong></span>
           </div>
-          ${data.records.length > 0 ? `<button class="btn-export" onclick="exportCSV('${data.fileName}', '${data.d100Number}')">Exportar a Excel</button>` : ''}
+          ${data.records.length > 0 ? `<button class="btn-export" onclick="exportCSV('${data.fileName}')">Exportar a Excel</button>` : ''}
         </div>
       `;
 
@@ -185,6 +203,7 @@
           <table>
             <thead>
               <tr>
+                <th>#</th>
                 <th>Formato D100 N°</th>
                 <th>Tipo</th>
                 <th>Número de Formato</th>
@@ -193,8 +212,9 @@
               </tr>
             </thead>
             <tbody>
-              ${data.records.map(r => `
+              ${data.records.map((r, index) => `
                 <tr>
+                  <td>${index + 1}</td>
                   <td>${r.d100}</td>
                   <td>${r.tipo}</td>
                   <td>${r.numFormato}</td>
@@ -214,23 +234,23 @@
       resultsDiv.appendChild(card);
     }
 
-    function exportCSV(fileName, d100Number) {
+    function exportCSV(fileName) {
       const cards = Array.from(document.querySelectorAll('.card'));
       const targetCard = cards.find(c => c.querySelector('h2').innerText.includes(fileName));
       if (!targetCard) return;
 
       const records = JSON.parse(targetCard.dataset.records);
-      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // UTF-8 BOM para tildes en Excel
-      csvContent += "Formato D100 N°;Tipo de Registro;Numero de Formato;DNI;Apellidos y Nombres\n";
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
+      csvContent += "Item;Formato D100 N°;Tipo de Registro;Numero de Formato;DNI;Apellidos y Nombres\n";
 
-      records.forEach(r => {
-        csvContent += `"${r.d100}";"${r.tipo}";"${r.numFormato}";"${r.dni}";"${r.nombres}"\n`;
+      records.forEach((r, idx) => {
+        csvContent += `"${idx + 1}";"${r.d100}";"${r.tipo}";"${r.numFormato}";"${r.dni}";"${r.nombres}"\n`;
       });
 
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `D100_${d100Number}_Export.csv`);
+      link.setAttribute("download", `${fileName.replace('.pdf', '')}_Registros.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
