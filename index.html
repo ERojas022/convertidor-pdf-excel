@@ -139,40 +139,40 @@
                         text.match(/FORMATO D100 Nro\.\s*:\s*(\d+)/i);
       const d100Number = d100Match ? d100Match[1] : 'No identificado';
 
-      // 2. Limpiar texto previo a la tabla
+      // 2. Aislar la sección del anexo
       let cleanedText = text;
       const inicioTabla = text.search(/ANEXO DEL FORMATO D100|RELACIÓN DE FORMATOS/i);
       if (inicioTabla !== -1) {
         cleanedText = text.substring(inicioTabla);
       }
 
-      // 3. Dividir por marcas de inicio de registro (FSU o S100)
+      // 3. Separar por marcas de inicio (FSU o S100)
       const textWithMarkers = cleanedText.replace(/\b(FSU|S100)\b(?=\s+\d{7,8})/g, '|||$1');
       const blocks = textWithMarkers.split('|||').filter(b => b.trim().startsWith('FSU') || b.trim().startsWith('S100'));
 
       const records = [];
 
       blocks.forEach(block => {
+        // Limpiar espacios y unificar hasta 2 líneas de texto por bloque
         const singleLineBlock = block.replace(/\s+/g, ' ').trim();
 
-        // Estructura: [TIPO] [COD_OPERACION] [NUM_FORMATO] [FECHA] [DNI]-[NOMBRES]
-        const regexBlock = /^(FSU|S100)\s+(\d+)\s+(\d+)\s+(\d{2}-\d{2}-\d{4})\s+([0-9A-Z]+)\s*-\s*(.+)$/i;
+        // Extraer campos principales omitiendo el código de operación
+        const regexBlock = /^(FSU|S100)\s+\d+\s+(\d+)\s+(\d{2}-\d{2}-\d{4})\s+([0-9A-Z]+)\s*-\s*(.+)$/i;
         const match = singleLineBlock.match(regexBlock);
 
         if (match) {
           let tipo = match[1].toUpperCase();
-          let codOperacion = match[2];
-          let numFormato = match[3];
-          let fecha = match[4];
-          let dni = match[5];
-          let nombresRaw = match[6];
+          let numFormato = match[2];
+          let fecha = match[3];
+          let dni = match[4];
+          let nombresRaw = match[5];
 
+          // Cortar basura de pie de página (Sub Total, Pagina, etc.)
           let nombres = nombresRaw.split(/(Sub Total|Total|Pagina|Ubigeo|RELACIÓN DE FORMATOS)/i)[0].trim();
 
           records.push({
             d100: d100Number,
             tipo: tipo,
-            codOperacion: codOperacion,
             numFormato: numFormato,
             fecha: fecha,
             dni: dni,
@@ -208,9 +208,8 @@
                 <th>#</th>
                 <th>Formato D100 N°</th>
                 <th>Tipo</th>
-                <th>Cód. Operación</th>
                 <th>Número de Formato</th>
-                <th>Fecha de Solicitud/FSU</th>
+                <th>Fecha</th>
                 <th>DNI</th>
                 <th>Apellidos y Nombres</th>
               </tr>
@@ -221,7 +220,6 @@
                   <td>${index + 1}</td>
                   <td>${r.d100}</td>
                   <td>${r.tipo}</td>
-                  <td>${r.codOperacion}</td>
                   <td>${r.numFormato}</td>
                   <td>${r.fecha}</td>
                   <td>${r.dni}</td>
@@ -247,10 +245,10 @@
 
       const records = JSON.parse(targetCard.dataset.records);
       let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-      csvContent += "Item;Formato D100 N°;Tipo;Cod Operacion;Numero de Formato;Fecha;DNI;Apellidos y Nombres\n";
+      csvContent += "Item;Formato D100 N°;Tipo;Numero de Formato;Fecha;DNI;Apellidos y Nombres\n";
 
       records.forEach((r, idx) => {
-        csvContent += `"${idx + 1}";"${r.d100}";"${r.tipo}";"${r.codOperacion}";"${r.numFormato}";"${r.fecha}";"${r.dni}";"${r.nombres}"\n`;
+        csvContent += `"${idx + 1}";"${r.d100}";"${r.tipo}";"${r.numFormato}";"${r.fecha}";"${r.dni}";"${r.nombres}"\n`;
       });
 
       const encodedUri = encodeURI(csvContent);
