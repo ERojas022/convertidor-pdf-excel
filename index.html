@@ -9,7 +9,7 @@
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      max-width: 1100px;
+      max-width: 1150px;
       margin: 30px auto;
       padding: 20px;
       background-color: #f4f7f6;
@@ -124,7 +124,6 @@
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
           
-          // Preservar estructura espacial
           let pageText = textContent.items.map(item => item.str).join(' ');
           fullText += pageText + ' \n ';
         }
@@ -148,18 +147,15 @@
       }
 
       // 3. Dividir por marcas de inicio de registro (FSU o S100)
-      // Agregamos un delimitador especial '|||' antes de cada FSU/S100 que forme parte de la tabla
       const textWithMarkers = cleanedText.replace(/\b(FSU|S100)\b(?=\s+\d{7,8})/g, '|||$1');
       const blocks = textWithMarkers.split('|||').filter(b => b.trim().startsWith('FSU') || b.trim().startsWith('S100'));
 
       const records = [];
 
       blocks.forEach(block => {
-        // Normalizar espacios internos del bloque
         const singleLineBlock = block.replace(/\s+/g, ' ').trim();
 
-        // Extraer campos del bloque:
-        // ESTRUCTURA: [TIPO] [COD_OPERACION] [NUM_FORMATO] [FECHA] [DNI]-[NOMBRES Y APELLIDOS]
+        // Estructura: [TIPO] [COD_OPERACION] [NUM_FORMATO] [FECHA] [DNI]-[NOMBRES]
         const regexBlock = /^(FSU|S100)\s+(\d+)\s+(\d+)\s+(\d{2}-\d{2}-\d{4})\s+([0-9A-Z]+)\s*-\s*(.+)$/i;
         const match = singleLineBlock.match(regexBlock);
 
@@ -171,7 +167,6 @@
           let dni = match[5];
           let nombresRaw = match[6];
 
-          // Cortar el nombre si el bloque alcanzó el pie de página ("Sub Total", "Total", "Pagina", etc.)
           let nombres = nombresRaw.split(/(Sub Total|Total|Pagina|Ubigeo|RELACIÓN DE FORMATOS)/i)[0].trim();
 
           records.push({
@@ -215,7 +210,7 @@
                 <th>Tipo</th>
                 <th>Cód. Operación</th>
                 <th>Número de Formato</th>
-                <th>Fecha</th>
+                <th>Fecha de Solicitud/FSU</th>
                 <th>DNI</th>
                 <th>Apellidos y Nombres</th>
               </tr>
